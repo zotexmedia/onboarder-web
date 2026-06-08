@@ -37,6 +37,8 @@ const APOLLO_TITLES = [
   'executive director', 'managing director', 'executive vice president',
   'senior director of operations', 'regional service manager',
   'deputy director of facilities', 'practice manager', 'community manager',
+  // finance approvers (added back per request)
+  'cfo', 'chief financial officer', 'controller', 'financial controller',
 ];
 
 const STATE_ABBR_TO_NAME = {
