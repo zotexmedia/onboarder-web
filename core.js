@@ -193,6 +193,7 @@ function buildApolloUrl(cities, stateName) {
   parts.push('sortAscending=false');
   parts.push(`sortByField=${encodeURIComponent('[none]')}`);
   parts.push(`prospectedByCurrentTeam[]=${encodeURIComponent('no')}`);
+  parts.push('includeSimilarTitles=false'); // exact-title match only (no Apollo title expansion)
   for (const c of cities) parts.push(`personLocations[]=${encodeURIComponent(stateName ? `${c}, ${stateName}` : c)}`);
   parts.push('page=1');
   return `https://app.apollo.io/#/people?${parts.join('&')}`;
