@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Client Onboarder</title>
+<style>
+  :root { --bg:#0f1320; --panel:#171c2e; --panel2:#1f2742; --line:#2b3450; --text:#e7ecf6; --muted:#9aa6c2; --accent:#5b8cff; --good:#39d98a; --warn:#ffcc66; --bad:#ff6b6b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  header { padding:18px 24px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:18px; margin:0; }
+  header .tag { font-size:12px; color:var(--muted); }
+  .wrap { display:grid; grid-template-columns: 420px 1fr; gap:0; min-height:calc(100vh - 59px); }
+  .left { padding:20px 24px; border-right:1px solid var(--line); overflow:auto; }
+  .right { padding:20px 24px; overflow:auto; }
+  label { display:block; font-size:12px; color:var(--muted); margin:14px 0 5px; }
+  textarea, input[type=text] { width:100%; background:var(--panel); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:10px; font:13px/1.45 ui-monospace,Menlo,Consolas,monospace; }
+  textarea { min-height:230px; resize:vertical; }
+  .row { display:flex; gap:10px; }
+  .row > div { flex:1; }
+  .check { display:flex; align-items:center; gap:8px; margin-top:14px; font-size:13px; color:var(--text); }
+  .btns { display:flex; gap:10px; margin-top:18px; }
+  button { border:0; border-radius:8px; padding:10px 16px; font-weight:600; cursor:pointer; }
+  .preview { background:var(--panel2); color:var(--text); border:1px solid var(--line); }
+  .create { background:var(--accent); color:#fff; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:14px; }
+  .card h3 { margin:0 0 10px; font-size:14px; }
+  .kv { display:grid; grid-template-columns:140px 1fr; gap:4px 12px; font-size:13px; }
+  .kv .k { color:var(--muted); }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; }
+  .pill.draft { background:rgba(57,217,138,.15); color:var(--good); }
+  .pill.preview { background:rgba(255,204,102,.15); color:var(--warn); }
+  pre { background:#0c1020; border:1px solid var(--line); border-radius:8px; padding:10px; overflow:auto; font-size:12px; white-space:pre-wrap; word-break:break-word; margin:8px 0 0; }
+  .sig { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .sig .h { font-size:11px; color:var(--muted); margin-bottom:4px; }
+  .urlbox { display:flex; gap:8px; align-items:center; }
+  .urlbox input { flex:1; }
+  .copy { background:var(--panel2); color:var(--text); border:1px solid var(--line); padding:8px 12px; font-size:12px; }
+  .muted { color:var(--muted); }
+  .err { color:var(--bad); }
+  .ok { color:var(--good); }
+  .logs { font-size:12px; color:var(--muted); }
+  .empty { color:var(--muted); margin-top:40px; text-align:center; }
+  a { color:var(--accent); }
+  .hint { font-size:11px; color:var(--muted); margin-top:4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Client Onboarder</h1>
+  <span class="tag" id="health"></span>
+</header>
+<div class="wrap">
+  <div class="left">
+    <label>Paste the onboarding form</label>
+    <textarea id="text" placeholder="Full Name: ...
+Personal Phone Number: ...
+Full Business Name: ...
+Business Address: ...
+Your Website: ...
+Which Email Address(es) ... : ...
+Best Business Phone Number ... : ...
+What name(s) should we use ... : ...
+List All Possible Cities ... : CITY, CITY, CITY
+Which industries / niches ... : ...
+What is the maximum number of leads ... : ..."></textarea>
+
+    <div class="row">
+      <div>
+        <label>Brand (optional)</label>
+        <input id="brand" type="text" placeholder="defaults to business name" />
+      </div>
+      <div>
+        <label>Tag for accounts (optional)</label>
+        <input id="tag" type="text" placeholder="defaults to brand" />
+      </div>
+    </div>
+
+    <label>Apollo template campaign (Industry Specific)</label>
+    <input id="apolloSource" type="text" placeholder='e.g. "ABS Commercial Cleaning Industry Specific"' />
+
+    <label>GMaps template campaign (optional)</label>
+    <input id="gmapsSource" type="text" placeholder='e.g. "Regal Cleaning Services (GMaps)"' />
+
+    <label>Timezone override (optional)</label>
+    <input id="timezone" type="text" placeholder="auto from address state (Instantly token)" />
+    <div class="hint">Leave blank — it's set from the client's state automatically.</div>
+
+    <div class="btns">
+      <button class="preview" id="btnPreview">Preview</button>
+      <button class="create" id="btnCreate">Create in Instantly</button>
+    </div>
+    <div class="hint">Create makes the campaigns <b>paused</b>. The tag is created for accounts; the inbox manager applies it.</div>
+  </div>
+
+  <div class="right" id="out">
+    <div class="empty">Paste a form and hit <b>Preview</b> to see the parsed client, Apollo link, and campaign swap.</div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+fetch('/api/health').then(r=>r.json()).then(h=>{
+  $('health').textContent = h.hasKey ? 'connected to Instantly' : 'NO API KEY set';
+  $('health').style.color = h.hasKey ? '#39d98a' : '#ff6b6b';
+}).catch(()=>{});
+
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+async function run(create){
+  const body = {
+    text: $('text').value,
+    brand: $('brand').value,
+    tag: $('tag').value,
+    apolloSource: $('apolloSource').value,
+    gmapsSource: $('gmapsSource').value,
+    timezone: $('timezone').value,
+    create,
+  };
+  $('btnPreview').disabled = true; $('btnCreate').disabled = true;
+  $('out').innerHTML = '<div class="empty">Working…</div>';
+  try {
+    const r = await fetch('/api/onboard', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const data = await r.json();
+    if (!data.ok) { $('out').innerHTML = '<div class="card"><h3 class="err">Error</h3><pre class="err">'+esc(data.error)+'</pre>'+logsHtml(data.logs)+'</div>'; return; }
+    render(data);
+  } catch (e) {
+    $('out').innerHTML = '<div class="card"><h3 class="err">Request failed</h3><pre class="err">'+esc(e.message)+'</pre></div>';
+  } finally {
+    $('btnPreview').disabled = false; $('btnCreate').disabled = false;
+  }
+}
+
+function logsHtml(logs){
+  if (!logs || !logs.length) return '';
+  return '<div class="logs"><b>Log</b><pre>'+esc(logs.join('\n'))+'</pre></div>';
+}
+
+function render(d){
+  const p = d.parsed;
+  let html = '';
+
+  html += '<div class="card"><h3>Parsed client'+(d.created?' <span class="pill draft">CREATED</span>':' <span class="pill preview">PREVIEW</span>')+'</h3><div class="kv">'
+    + kv('Contact', esc(p.fullName)+'  '+esc(p.personalPhone))
+    + kv('Business', esc(p.businessName))
+    + kv('Signature addr', esc(d.signatureAddress))
+    + kv('Website', esc(p.website))
+    + kv('Forward to', esc((p.forwardingEmails||[]).join(', ')||'—'))
+    + kv('Signature phone', esc((p.signaturePhones||[]).join(', ')||'—'))
+    + kv('Sender name(s)', esc((p.senderNames||[]).join(', ')||'—'))
+    + kv('Excluded', esc((p.excludedIndustries||[]).join(', ')||'none'))
+    + kv('Monthly cap', esc(p.monthlyLeadCap==null?'—':p.monthlyLeadCap+' / mo'))
+    + kv('Timezone', esc(d.timezone||'(template default)'))
+    + kv('Cities', esc((p.cities||[]).length)+': '+esc((p.cities||[]).slice(0,8).join(', '))+((p.cities||[]).length>8?', …':''))
+    + '</div></div>';
+
+  html += '<div class="card"><h3>Apollo search URL <span class="muted">('+esc((p.cities||[]).length)+' cities · '+esc(d.stateName||'n/a')+')</span></h3>'
+    + '<div class="urlbox"><input type="text" readonly id="apolloUrl" value="'+esc(d.apolloUrl)+'" />'
+    + '<button class="copy" onclick="copyUrl()">Copy</button>'
+    + '<a class="copy" href="'+esc(d.apolloUrl)+'" target="_blank" rel="noopener">Open</a></div></div>';
+
+  for (const c of (d.campaigns||[])) {
+    html += '<div class="card"><h3>'+esc(c.kind.toUpperCase())+' — '+esc(c.name)+' '
+      + '<span class="pill '+(c.status==='draft'?'draft':'preview')+'">'+esc(c.status)+'</span></h3>'
+      + '<div class="kv">'
+      + kv('Template', esc(c.templateName))
+      + kv('Company', esc(c.companySwap.from)+' → '+esc(c.companySwap.to))
+      + kv('Address', '→ '+esc(c.addressSwap.to)+(c.addressSwap.phone?' (+ '+esc(c.addressSwap.phone)+')':''))
+      + kv('Timezone', esc(c.timezone)+(c.templateTimezone&&c.templateTimezone!==c.timezone?' <span class="muted">(was '+esc(c.templateTimezone)+')</span>':''))
+      + (c.id?kv('Campaign', '<a href="'+esc(c.url)+'" target="_blank" rel="noopener">'+esc(c.id)+'</a>'):'')
+      + '</div>'
+      + (c.signatureBefore?'<div class="sig"><div><div class="h">Signature before</div><pre>'+esc(c.signatureBefore)+'</pre></div><div><div class="h">Signature after</div><pre>'+esc(c.signatureAfter)+'</pre></div></div>':'')
+      + '</div>';
+  }
+
+  if (d.tag && d.tag.label) {
+    html += '<div class="card"><h3>Account tag</h3><div class="kv">'
+      + kv('Label', esc(d.tag.label))
+      + kv('Tag id', esc(d.tag.id||'(created on Create)'))
+      + kv('Scope', 'sending accounts (not campaigns)')
+      + kv('Applied to', esc((d.tag.taggedAccounts||[]).join(', ')||'none yet — inbox manager applies it'))
+      + '</div></div>';
+  }
+
+  html += logsHtml(d.logs);
+  $('out').innerHTML = html;
+}
+
+function kv(k,v){ return '<div class="k">'+k+'</div><div>'+v+'</div>'; }
+function copyUrl(){ const el=$('apolloUrl'); el.select(); document.execCommand('copy'); }
+
+$('btnPreview').onclick = ()=>run(false);
+$('btnCreate').onclick = ()=>{ if(confirm('Create these campaigns (paused) in Instantly?')) run(true); };
+</script>
+</body>
+</html>
