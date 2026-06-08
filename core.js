@@ -37,8 +37,17 @@ const APOLLO_TITLES = [
   'executive director', 'managing director', 'executive vice president',
   'senior director of operations', 'regional service manager',
   'deputy director of facilities', 'practice manager', 'community manager',
-  // finance approvers (added back per request)
+  // finance / accounting (excl. the HR admin)
   'cfo', 'chief financial officer', 'controller', 'financial controller',
+  'financial manager', 'director of finance', 'cfa', 'finance and development administrator',
+  // coordinators (project + resource only)
+  'project coordinator', 'resource coordinator',
+  // industrial / retail / engineering
+  'plant manager', 'parts manager', 'pos manager', 'retail manager', 'director of retail operations',
+  'warehouse manager', 'warehouse coordinator', 'manufacturing coordinator', 'gse manager',
+  'executive estimator', 'sr. dir. engineering', 'operations and events manager',
+  // education / clergy / clinical (excl. culinary)
+  'pastor', 'principal', 'school principal', 'chief school administrator', 'clinical director',
 ];
 
 const STATE_ABBR_TO_NAME = {
