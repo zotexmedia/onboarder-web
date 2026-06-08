@@ -30,7 +30,13 @@ const APOLLO_TITLES = [
   'property manager', 'senior property manager', 'assistant property manager',
   'director of maintenance', 'maintenance manager', 'regional maintenance manager',
   'manager of cleaning services', 'office manager', 'office administrator',
-  'office admin', 'administrator', 'business manager',
+  'office admin', 'office coordinator', 'administrator', 'business manager',
+  'director of administration',
+  // added from the lead-generating-titles review (proven converters, flukes removed)
+  'project manager', 'senior project manager', 'assistant project manager',
+  'executive director', 'managing director', 'executive vice president',
+  'senior director of operations', 'regional service manager',
+  'deputy director of facilities', 'practice manager', 'community manager',
 ];
 
 const STATE_ABBR_TO_NAME = {
