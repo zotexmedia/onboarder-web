@@ -228,6 +228,13 @@ async function resolveSourceCampaign(client, source) {
   const { data: full } = await withRetry(() => client.get(`/campaigns/${pick.id}`), 'get campaign');
   return full;
 }
+// Search existing custom tags (for the UI's tag-picker dropdown).
+async function searchTags(query, apiKey, limit = 25) {
+  const client = instantlyClient(apiKey);
+  const { data } = await withRetry(
+    () => client.get('/custom-tags', { params: { search: query || '', limit } }), 'search tags');
+  return (data?.items || []).map((t) => ({ id: t.id, label: t.label }));
+}
 async function ensureTag(client, label) {
   const { data } = await withRetry(() => client.get('/custom-tags', { params: { search: label, limit: 20 } }), 'search tags');
   const existing = (data?.items || []).find((t) => (t.label || '').toLowerCase() === label.toLowerCase());
@@ -569,5 +576,5 @@ module.exports = {
   runOnboard, APOLLO_TITLES, INSTANTLY_TZ_BY_STATE,
   instantlyClient, ensureTag, assignTagToAccounts, verifyTagOnAccounts,
   resolveAccountsByDomains, listAllAccounts, normalizeDomain, domainOf,
-  tagAccountsByDomain,
+  tagAccountsByDomain, searchTags,
 };

@@ -69,6 +69,15 @@
     font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; cursor:pointer; text-decoration:none; display:flex; align-items:center; }
   .urlbtn:hover{ background:var(--ink); color:var(--paper); }
 
+  .combo{ position:relative; }
+  .combo-list{ position:absolute; left:0; right:0; top:100%; z-index:20; background:var(--paper);
+    border:1px solid var(--ink); border-top:0; max-height:230px; overflow:auto; display:none; }
+  .combo-list.open{ display:block; }
+  .combo-item{ padding:8px 11px; font-size:13px; cursor:pointer; border-top:1px solid var(--hair); }
+  .combo-item:first-child{ border-top:0; }
+  .combo-item:hover, .combo-item.active{ background:var(--ink); color:var(--paper); }
+  .combo-empty{ padding:8px 11px; font-size:12px; color:var(--mute); }
+
   .logs{ font-size:11.5px; color:var(--mute); }
   .err{ color:var(--ink); font-weight:700; }
   a{ color:var(--ink); }
@@ -124,15 +133,15 @@ What is the maximum number of leads ... : ..."></textarea>
 
    <div class="panel" id="panel-tag">
     <label>Account tag</label>
-    <input id="tTag" type="text" placeholder='e.g. ACBC Management Group' />
-    <div class="hint">The client tag to apply to sending accounts (created if it doesn't exist).</div>
+    <div class="combo">
+      <input id="tTag" type="text" autocomplete="off" placeholder='Search existing tags…' />
+      <div class="combo-list" id="tTagList"></div>
+    </div>
+    <div class="hint">Search and pick an existing client tag (created if it doesn't exist).</div>
 
     <label>Sending domains</label>
     <input id="tDomains" type="text" placeholder='e.g. acmecleanco.com, getacmeclean.com' />
     <div class="hint">Every Instantly account whose email is on these domains gets the tag.</div>
-
-    <label>Extra account emails <span style="text-transform:none;letter-spacing:0">(optional)</span></label>
-    <input id="tAccounts" type="text" placeholder='e.g. jay@acme.com, info@acme.com' />
 
     <div class="btns">
       <button class="btn-preview" id="btnCount">Count (dry)</button>
@@ -235,7 +244,7 @@ function render(d){
   $('out').innerHTML=h;
 }
 async function runTag(apply){
-  const body={ tag:$('tTag').value, domains:$('tDomains').value, accounts:$('tAccounts').value, apply };
+  const body={ tag:$('tTag').value, domains:$('tDomains').value, apply };
   $('btnCount').disabled=true; $('btnApply').disabled=true;
   $('out').innerHTML='<div class="empty"><span class="big">'+(apply?'Tagging…':'Counting…')+'</span></div>';
   try{
@@ -273,7 +282,25 @@ function renderTag(d){
 $('btnPreview').onclick=()=>run(false);
 $('btnCreate').onclick=()=>{ if(confirm('Create these campaigns (paused) in Instantly?')) run(true); };
 $('btnCount').onclick=()=>runTag(false);
-$('btnApply').onclick=()=>{ const n=($('tDomains').value+' '+$('tAccounts').value).trim(); if(!$('tTag').value.trim()){alert('Enter a tag label.');return;} if(!n){alert('Enter at least one domain or account email.');return;} if(confirm('Apply tag "'+$('tTag').value.trim()+'" to all matching accounts?')) runTag(true); };
+$('btnApply').onclick=()=>{ if(!$('tTag').value.trim()){alert('Enter a tag label.');return;} if(!$('tDomains').value.trim()){alert('Enter at least one sending domain.');return;} if(confirm('Apply tag "'+$('tTag').value.trim()+'" to all matching accounts?')) runTag(true); };
+
+// Account-tag search dropdown
+(function(){
+  const inp=$('tTag'), list=$('tTagList'); let timer=null, items=[];
+  async function load(){
+    try{
+      const r=await fetch('/api/tags?search='+encodeURIComponent(inp.value.trim()));
+      const d=await r.json(); items=(d.ok&&d.tags)||[];
+      if(!items.length){ list.innerHTML='<div class="combo-empty">No matching tags — type a name to create it.</div>'; list.classList.add('open'); return; }
+      list.innerHTML=items.map((t,i)=>'<div class="combo-item" data-i="'+i+'">'+esc(t.label)+'</div>').join('');
+      list.querySelectorAll('.combo-item').forEach(el=>el.onmousedown=(e)=>{ e.preventDefault(); inp.value=items[+el.getAttribute('data-i')].label; list.classList.remove('open'); });
+      list.classList.add('open');
+    }catch(e){ list.classList.remove('open'); }
+  }
+  inp.addEventListener('input',()=>{ clearTimeout(timer); timer=setTimeout(load,200); });
+  inp.addEventListener('focus',load);
+  inp.addEventListener('blur',()=>setTimeout(()=>list.classList.remove('open'),150));
+})();
 </script>
 </body>
 </html>

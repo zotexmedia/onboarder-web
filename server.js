@@ -2,7 +2,7 @@ const path = require('path');
 const express = require('express');
 require('dotenv').config();
 
-const { runOnboard, tagAccountsByDomain } = require('./core');
+const { runOnboard, tagAccountsByDomain, searchTags } = require('./core');
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -38,6 +38,17 @@ app.post('/api/onboard', async (req, res) => {
   } catch (err) {
     const detail = err.response?.data || err.message || String(err);
     res.status(400).json({ ok: false, error: typeof detail === 'string' ? detail : JSON.stringify(detail), logs });
+  }
+});
+
+// Tag-picker dropdown: search existing custom tags by label.
+app.get('/api/tags', async (req, res) => {
+  try {
+    const tags = await searchTags(req.query.search || '');
+    res.json({ ok: true, tags });
+  } catch (err) {
+    const detail = err.response?.data || err.message || String(err);
+    res.status(400).json({ ok: false, error: typeof detail === 'string' ? detail : JSON.stringify(detail) });
   }
 });
 
