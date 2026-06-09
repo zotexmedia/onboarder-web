@@ -22,6 +22,7 @@ const has = (name) => process.argv.includes(name);
     gmapsSource: arg('--gmaps-source'),
     brand: arg('--brand'),
     tag: arg('--tag'),
+    domains: arg('--domains'),
     accounts: arg('--accounts'),
     timezone: arg('--timezone') || arg('--tz'),
     phone: !has('--no-phone'),

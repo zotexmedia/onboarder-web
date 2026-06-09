@@ -27,6 +27,7 @@ app.post('/api/onboard', async (req, res) => {
       gmapsName: b.gmapsName?.trim() || undefined,
       tag: b.tag?.trim() || undefined,
       noTag: !!b.noTag,
+      domains: b.domains || undefined,
       accounts: b.accounts || undefined,
       state: b.state?.trim() || undefined,
       timezone: b.timezone?.trim() || undefined,

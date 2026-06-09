@@ -235,10 +235,71 @@ async function ensureTag(client, label) {
   const { data: created } = await withRetry(() => client.post('/custom-tags', { label }), 'create tag');
   return { ...created, _created: true };
 }
-async function assignTagToAccounts(client, tagId, accountIds) {
+// An Instantly account's resource_id for /custom-tags/toggle-resource is its
+// EMAIL (the /accounts `id` field is always null). Verified live 2026-06-09.
+async function assignTagToAccounts(client, tagId, accountEmails) {
   return withRetry(() => client.post('/custom-tags/toggle-resource', {
-    resource_ids: accountIds, resource_type: TAG_RESOURCE_ACCOUNT, assign: true, tag_ids: [tagId],
+    resource_ids: accountEmails, resource_type: TAG_RESOURCE_ACCOUNT, assign: true, tag_ids: [tagId],
   }), 'assign tag to accounts');
+}
+
+function normalizeDomain(d) {
+  return String(d || '').trim().toLowerCase()
+    .replace(/^https?:\/\//, '').replace(/^www\./, '')
+    .replace(/\/.*$/, '').replace(/^@/, '').trim();
+}
+function domainOf(email) {
+  const at = String(email || '').lastIndexOf('@');
+  return at === -1 ? '' : email.slice(at + 1).toLowerCase().trim();
+}
+
+// Paginate every sending account (cursor = next_starting_after).
+async function listAllAccounts(client) {
+  const out = [];
+  let cursor = null;
+  for (let i = 0; i < 1000; i++) {
+    const params = { limit: 100 };
+    if (cursor) params.starting_after = cursor;
+    const { data } = await withRetry(() => client.get('/accounts', { params }), 'list accounts');
+    const items = data?.items || [];
+    out.push(...items);
+    cursor = data?.next_starting_after;
+    if (!cursor || items.length === 0) break;
+  }
+  return out;
+}
+
+// Resolve client domains -> the sending-account emails to tag.
+async function resolveAccountsByDomains(client, domains) {
+  const wanted = new Set(domains.map(normalizeDomain).filter(Boolean));
+  if (!wanted.size) return { emails: [], byDomain: {}, missingDomains: [] };
+  const accounts = await listAllAccounts(client);
+  const byDomain = {};
+  for (const d of wanted) byDomain[d] = [];
+  for (const a of accounts) {
+    const dom = domainOf(a.email);
+    if (wanted.has(dom)) byDomain[dom].push(a.email);
+  }
+  const emails = Object.values(byDomain).flat();
+  const missingDomains = [...wanted].filter((d) => byDomain[d].length === 0);
+  return { emails, byDomain, missingDomains };
+}
+
+// Double-check: read the tag's resources back and confirm every email is present.
+async function verifyTagOnAccounts(client, tagId, emails) {
+  const tagged = new Set();
+  let cursor = null;
+  for (let i = 0; i < 1000; i++) {
+    const params = { limit: 100, tag_ids: tagId };
+    if (cursor) params.starting_after = cursor;
+    const { data } = await withRetry(() => client.get('/accounts', { params }), 'verify tag accounts');
+    const items = data?.items || [];
+    for (const a of items) tagged.add((a.email || '').toLowerCase());
+    cursor = data?.next_starting_after;
+    if (!cursor || items.length === 0) break;
+  }
+  const missing = emails.filter((e) => !tagged.has(e.toLowerCase()));
+  return { ok: missing.length === 0, verifiedCount: emails.length - missing.length, missing };
 }
 
 // ── Signature swap ───────────────────────────────────────────────────────────
@@ -335,8 +396,9 @@ function sigPreview(source, swap) {
 // ── Orchestrator ─────────────────────────────────────────────────────────────
 /**
  * @param {object} opts { text, apolloSource, gmapsSource, brand, apolloName,
- *   gmapsName, tag, noTag, accounts (csv|array), state, timezone, sourceCompany,
- *   phone (bool), create (bool), apiKey }
+ *   gmapsName, tag, noTag, domains (csv|array of sending domains to tag),
+ *   accounts (csv|array of explicit account emails), state, timezone,
+ *   sourceCompany, phone (bool), create (bool), apiKey }
  * @param {(msg:string)=>void} [onLog]
  * @returns {Promise<object>} structured result
  */
@@ -357,7 +419,10 @@ async function runOnboard(opts = {}, onLog = () => {}) {
   if (opts.gmapsSource) jobs.push({ kind: 'gmaps', source: opts.gmapsSource, name: opts.gmapsName || `${brand} (GMaps)` });
 
   const campaigns = [];
-  const tagOut = { label: opts.noTag ? null : (opts.tag || brand), id: null, scope: 'accounts', taggedAccounts: [] };
+  const tagOut = {
+    label: opts.noTag ? null : (opts.tag || brand), id: null, scope: 'accounts',
+    domains: [], taggedAccounts: [], byDomain: {}, missingDomains: [], verified: null,
+  };
 
   if (jobs.length) {
     const client = instantlyClient(opts.apiKey);
@@ -389,17 +454,45 @@ async function runOnboard(opts = {}, onLog = () => {}) {
     }
 
     if (!opts.noTag) {
-      const accountIds = Array.isArray(opts.accounts)
+      // Domains whose sending accounts should get the client tag.
+      const domains = (Array.isArray(opts.domains)
+        ? opts.domains
+        : String(opts.domains || '').split(/[,\s]+/)).map(normalizeDomain).filter(Boolean);
+      // Explicit account emails (optional) tag in addition to domain-resolved ones.
+      const explicitEmails = (Array.isArray(opts.accounts)
         ? opts.accounts
-        : String(opts.accounts || '').split(',').map((s) => s.trim()).filter(Boolean);
+        : String(opts.accounts || '').split(/[,\s]+/)).map((s) => s.trim()).filter(Boolean);
+      tagOut.domains = domains;
+
       if (opts.create) {
         const tag = await ensureTag(client, tagOut.label);
         tagOut.id = tag.id;
         log(`Tag "${tagOut.label}" ${tag._created ? 'created' : 'already existed'} (${tag.id}).`);
-        if (accountIds.length) {
-          await assignTagToAccounts(client, tag.id, accountIds);
-          tagOut.taggedAccounts = accountIds;
-          log(`✅ Applied tag to ${accountIds.length} account(s).`);
+
+        let emails = [...explicitEmails];
+        if (domains.length) {
+          log(`Resolving accounts for ${domains.length} domain(s): ${domains.join(', ')}…`);
+          const res = await resolveAccountsByDomains(client, domains);
+          tagOut.byDomain = res.byDomain;
+          tagOut.missingDomains = res.missingDomains;
+          for (const [d, list] of Object.entries(res.byDomain)) log(`  ${d}: ${list.length} account(s)`);
+          if (res.missingDomains.length) log(`  ⚠️ no accounts found for: ${res.missingDomains.join(', ')}`);
+          emails = [...new Set([...emails, ...res.emails])];
+        }
+
+        if (emails.length) {
+          await assignTagToAccounts(client, tag.id, emails);
+          tagOut.taggedAccounts = emails;
+          log(`Applied tag to ${emails.length} account(s); verifying…`);
+          const check = await verifyTagOnAccounts(client, tag.id, emails);
+          tagOut.verified = check;
+          if (check.ok) {
+            log(`✅ Verified tag on all ${check.verifiedCount} account(s).`);
+          } else {
+            log(`❌ Verification FAILED: ${check.missing.length} account(s) missing the tag (e.g. ${check.missing.slice(0, 3).join(', ')}).`);
+          }
+        } else {
+          log('No account emails resolved to tag (provide domains or account emails).');
         }
       }
     }
@@ -417,4 +510,6 @@ async function runOnboard(opts = {}, onLog = () => {}) {
 module.exports = {
   parseOnboarding, buildApolloUrl, oneLineAddress, stateNameFromAddress, resolveTimezone,
   runOnboard, APOLLO_TITLES, INSTANTLY_TZ_BY_STATE,
+  instantlyClient, ensureTag, assignTagToAccounts, verifyTagOnAccounts,
+  resolveAccountsByDomains, listAllAccounts, normalizeDomain, domainOf,
 };

@@ -100,6 +100,10 @@ What is the maximum number of leads ... : ..."></textarea>
     <label>GMaps template</label>
     <input id="gmapsSource" type="text" placeholder='e.g. Regal Cleaning Services (GMaps)' />
 
+    <label>Sending domains to tag</label>
+    <input id="domains" type="text" placeholder='e.g. acmecleanco.com, getacmeclean.com' />
+    <div class="hint">On Create: every sending account on these domains gets the client tag (verified after).</div>
+
     <label>Timezone override</label>
     <input id="timezone" type="text" placeholder="auto from address state" />
     <div class="hint">Leave blank — set from the client's state automatically.</div>
@@ -123,7 +127,8 @@ function esc(s){ return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;'
 
 async function run(create){
   const body={ text:$('text').value, brand:$('brand').value, tag:$('tag').value,
-    apolloSource:$('apolloSource').value, gmapsSource:$('gmapsSource').value, timezone:$('timezone').value, create };
+    apolloSource:$('apolloSource').value, gmapsSource:$('gmapsSource').value, domains:$('domains').value,
+    timezone:$('timezone').value, create };
   $('btnPreview').disabled=true; $('btnCreate').disabled=true;
   $('out').innerHTML='<div class="empty"><span class="big">Working…</span></div>';
   try{
@@ -172,11 +177,22 @@ function render(d){
   }
 
   if(d.tag&&d.tag.label){
+    const t=d.tag, accts=t.taggedAccounts||[];
+    const byDom=t.byDomain&&Object.keys(t.byDomain).length
+      ? Object.entries(t.byDomain).map(([dom,list])=>esc(dom)+': '+list.length).join(' · ') : '';
+    let vrow='';
+    if(t.verified){ vrow = t.verified.ok
+      ? kv('Verified', '✅ all '+t.verified.verifiedCount+' account(s) carry the tag')
+      : kv('Verified', '❌ '+t.verified.missing.length+' missing: '+esc(t.verified.missing.slice(0,5).join(', '))); }
     h+='<div class="block"><h3>Account tag</h3><div class="kv">'
-      +kv('Label', esc(d.tag.label))
-      +kv('Tag id', esc(d.tag.id||'(created on Create)'))
+      +kv('Label', esc(t.label))
+      +kv('Tag id', esc(t.id||'(created on Create)'))
       +kv('Scope', 'sending accounts — not campaigns')
-      +kv('Applied to', esc((d.tag.taggedAccounts||[]).join(', ')||'none yet — inbox manager applies it'))
+      +(t.domains&&t.domains.length?kv('Domains', esc(t.domains.join(', '))):'')
+      +(byDom?kv('Accounts/domain', byDom):'')
+      +(t.missingDomains&&t.missingDomains.length?kv('No accounts for', esc(t.missingDomains.join(', '))):'')
+      +kv('Applied to', accts.length? accts.length+' account(s)' : 'none yet — add sending domains and Create')
+      +vrow
       +'</div></div>';
   }
   h+=logsHtml(d.logs);
