@@ -2,7 +2,7 @@ const path = require('path');
 const express = require('express');
 require('dotenv').config();
 
-const { runOnboard } = require('./core');
+const { runOnboard, tagAccountsByDomain } = require('./core');
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -35,6 +35,25 @@ app.post('/api/onboard', async (req, res) => {
       create: !!b.create,
     }, (m) => logs.push(m));
     res.json({ ok: true, ...result, logs });
+  } catch (err) {
+    const detail = err.response?.data || err.message || String(err);
+    res.status(400).json({ ok: false, error: typeof detail === 'string' ? detail : JSON.stringify(detail), logs });
+  }
+});
+
+// Standalone: tag sending accounts by domain (no form / no campaigns).
+// Body: { tag, domains, accounts?, apply }. apply=false → dry count.
+app.post('/api/tag-accounts', async (req, res) => {
+  const logs = [];
+  try {
+    const b = req.body || {};
+    const result = await tagAccountsByDomain({
+      tag: b.tag?.trim() || undefined,
+      domains: b.domains || undefined,
+      accounts: b.accounts || undefined,
+      apply: !!b.apply,
+    }, (m) => logs.push(m));
+    res.json({ ok: true, tag: result, logs });
   } catch (err) {
     const detail = err.response?.data || err.message || String(err);
     res.status(400).json({ ok: false, error: typeof detail === 'string' ? detail : JSON.stringify(detail), logs });

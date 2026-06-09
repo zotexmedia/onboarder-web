@@ -15,9 +15,15 @@
   body{ font:14px/1.55 "Helvetica Neue",Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased; }
   .mono{ font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; }
 
-  header{ display:flex; align-items:baseline; gap:14px; padding:16px 22px; border-bottom:2px solid var(--ink); }
+  header{ display:flex; align-items:center; gap:18px; padding:14px 22px; border-bottom:2px solid var(--ink); }
   header h1{ font-size:15px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; margin:0; }
-  header .meta{ font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--mute); }
+  header .meta{ font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--mute); margin-left:auto; }
+  .tabs{ display:flex; gap:0; border:1px solid var(--ink); }
+  .tab{ padding:7px 16px; font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+    cursor:pointer; background:var(--paper); color:var(--ink); border-right:1px solid var(--ink); }
+  .tab:last-child{ border-right:0; }
+  .tab.active{ background:var(--ink); color:var(--paper); }
+  .panel{ display:none; } .panel.active{ display:block; }
 
   .wrap{ display:grid; grid-template-columns:430px 1fr; min-height:calc(100vh - 53px); }
   .left{ padding:22px; border-right:2px solid var(--ink); }
@@ -71,11 +77,16 @@
 <body>
 <header>
   <h1>Client Onboarder</h1>
+  <div class="tabs">
+    <div class="tab active" id="tabOnboard" onclick="switchMode('onboard')">Onboard client</div>
+    <div class="tab" id="tabTag" onclick="switchMode('tag')">Tag accounts</div>
+  </div>
   <span class="meta" id="health">—</span>
 </header>
 
 <div class="wrap">
   <div class="left">
+   <div class="panel active" id="panel-onboard">
     <label>Onboarding form</label>
     <textarea id="text" placeholder="Full Name: ...
 Personal Phone Number: ...
@@ -100,10 +111,6 @@ What is the maximum number of leads ... : ..."></textarea>
     <label>GMaps template</label>
     <input id="gmapsSource" type="text" placeholder='e.g. Regal Cleaning Services (GMaps)' />
 
-    <label>Sending domains to tag</label>
-    <input id="domains" type="text" placeholder='e.g. acmecleanco.com, getacmeclean.com' />
-    <div class="hint">On Create: every sending account on these domains gets the client tag (verified after).</div>
-
     <label>Timezone override</label>
     <input id="timezone" type="text" placeholder="auto from address state" />
     <div class="hint">Leave blank — set from the client's state automatically.</div>
@@ -112,7 +119,27 @@ What is the maximum number of leads ... : ..."></textarea>
       <button class="btn-preview" id="btnPreview">Preview</button>
       <button class="btn-create" id="btnCreate">Create in Instantly</button>
     </div>
-    <div class="hint">Create makes campaigns <b>paused</b>. The tag is for sending accounts — the inbox manager applies it.</div>
+    <div class="hint">Create makes campaigns <b>paused</b> and ensures the client tag exists. Tag the sending accounts later in <b>Tag accounts</b>, once they're created.</div>
+   </div>
+
+   <div class="panel" id="panel-tag">
+    <label>Account tag</label>
+    <input id="tTag" type="text" placeholder='e.g. ACBC Management Group' />
+    <div class="hint">The client tag to apply to sending accounts (created if it doesn't exist).</div>
+
+    <label>Sending domains</label>
+    <input id="tDomains" type="text" placeholder='e.g. acmecleanco.com, getacmeclean.com' />
+    <div class="hint">Every Instantly account whose email is on these domains gets the tag.</div>
+
+    <label>Extra account emails <span style="text-transform:none;letter-spacing:0">(optional)</span></label>
+    <input id="tAccounts" type="text" placeholder='e.g. jay@acme.com, info@acme.com' />
+
+    <div class="btns">
+      <button class="btn-preview" id="btnCount">Count (dry)</button>
+      <button class="btn-create" id="btnApply">Apply tag</button>
+    </div>
+    <div class="hint"><b>Count</b> shows how many accounts match — nothing is changed. <b>Apply</b> tags them and verifies each one.</div>
+   </div>
   </div>
 
   <div class="right" id="out">
@@ -125,9 +152,18 @@ const $=(id)=>document.getElementById(id);
 fetch('/api/health').then(r=>r.json()).then(h=>{ $('health').textContent = h.hasKey?'Instantly · connected':'No API key'; }).catch(()=>{});
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
+function switchMode(m){
+  const on = m==='onboard';
+  $('tabOnboard').classList.toggle('active',on); $('tabTag').classList.toggle('active',!on);
+  $('panel-onboard').classList.toggle('active',on); $('panel-tag').classList.toggle('active',!on);
+  $('out').innerHTML='<div class="empty"><span class="big">No output yet</span>'
+    +(on?'Paste a form and press Preview to see the parsed client, the Apollo link, and the campaign signature swap.'
+        :'Enter a tag and the client\'s sending domains, then Count to preview or Apply to tag the accounts.')+'</div>';
+}
+
 async function run(create){
   const body={ text:$('text').value, brand:$('brand').value, tag:$('tag').value,
-    apolloSource:$('apolloSource').value, gmapsSource:$('gmapsSource').value, domains:$('domains').value,
+    apolloSource:$('apolloSource').value, gmapsSource:$('gmapsSource').value,
     timezone:$('timezone').value, create };
   $('btnPreview').disabled=true; $('btnCreate').disabled=true;
   $('out').innerHTML='<div class="empty"><span class="big">Working…</span></div>';
@@ -198,8 +234,46 @@ function render(d){
   h+=logsHtml(d.logs);
   $('out').innerHTML=h;
 }
+async function runTag(apply){
+  const body={ tag:$('tTag').value, domains:$('tDomains').value, accounts:$('tAccounts').value, apply };
+  $('btnCount').disabled=true; $('btnApply').disabled=true;
+  $('out').innerHTML='<div class="empty"><span class="big">'+(apply?'Tagging…':'Counting…')+'</span></div>';
+  try{
+    const r=await fetch('/api/tag-accounts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const data=await r.json();
+    if(!data.ok){ $('out').innerHTML='<div class="block"><h3>Error</h3><pre class="err">'+esc(data.error)+'</pre>'+logsHtml(data.logs)+'</div>'; return; }
+    renderTag(data);
+  }catch(e){ $('out').innerHTML='<div class="block"><h3>Request failed</h3><pre class="err">'+esc(e.message)+'</pre></div>'; }
+  finally{ $('btnCount').disabled=false; $('btnApply').disabled=false; }
+}
+function renderTag(d){
+  const t=d.tag, accts=t.resolvedAccounts||[];
+  const byDom=t.byDomain&&Object.keys(t.byDomain).length
+    ? Object.entries(t.byDomain).map(([dom,list])=>esc(dom)+': '+list.length).join(' · ') : '';
+  let vrow='';
+  if(t.applied){ vrow = t.verified ? (t.verified.ok
+      ? kv('Verified', '✅ all '+t.verified.verifiedCount+' account(s) carry the tag')
+      : kv('Verified', '❌ '+t.verified.missing.length+' missing: '+esc(t.verified.missing.slice(0,5).join(', '))))
+    : kv('Verified','—'); }
+  let h='<div class="block"><h3>Tag accounts <span class="pill '+(t.applied?'on':'')+'">'+(t.applied?'applied':'dry run')+'</span></h3><div class="kv">'
+    +kv('Tag', esc(t.label))
+    +(t.id?kv('Tag id', esc(t.id)):'')
+    +(t.domains&&t.domains.length?kv('Domains', esc(t.domains.join(', '))):'')
+    +(byDom?kv('Accounts/domain', byDom):'')
+    +(t.missingDomains&&t.missingDomains.length?kv('No accounts for', esc(t.missingDomains.join(', '))):'')
+    +kv('Matched', accts.length+' account(s)'+(t.applied?'':' — not changed'))
+    +vrow
+    +'</div>'
+    +(accts.length?'<pre>'+esc(accts.join('\n'))+'</pre>':'')
+    +'</div>';
+  h+=logsHtml(d.logs);
+  $('out').innerHTML=h;
+}
+
 $('btnPreview').onclick=()=>run(false);
 $('btnCreate').onclick=()=>{ if(confirm('Create these campaigns (paused) in Instantly?')) run(true); };
+$('btnCount').onclick=()=>runTag(false);
+$('btnApply').onclick=()=>{ const n=($('tDomains').value+' '+$('tAccounts').value).trim(); if(!$('tTag').value.trim()){alert('Enter a tag label.');return;} if(!n){alert('Enter at least one domain or account email.');return;} if(confirm('Apply tag "'+$('tTag').value.trim()+'" to all matching accounts?')) runTag(true); };
 </script>
 </body>
 </html>

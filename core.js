@@ -302,6 +302,63 @@ async function verifyTagOnAccounts(client, tagId, emails) {
   return { ok: missing.length === 0, verifiedCount: emails.length - missing.length, missing };
 }
 
+/**
+ * Standalone: tag the sending accounts on given domains with a client tag.
+ * Independent of onboarding/campaign creation — run it whenever the accounts exist.
+ * @param {object} opts { tag, domains (csv|array), accounts (csv|array of emails),
+ *   apply (bool — false = dry count only), apiKey }
+ * @returns {Promise<object>} { label, id, domains, byDomain, missingDomains,
+ *   resolvedAccounts, applied, verified }
+ */
+async function tagAccountsByDomain(opts = {}, onLog = () => {}) {
+  const log = (m) => onLog(m);
+  const label = (opts.tag || '').trim();
+  if (!label) throw new Error('Tag label is required.');
+  const domains = (Array.isArray(opts.domains)
+    ? opts.domains
+    : String(opts.domains || '').split(/[,\s]+/)).map(normalizeDomain).filter(Boolean);
+  const explicitEmails = (Array.isArray(opts.accounts)
+    ? opts.accounts
+    : String(opts.accounts || '').split(/[,\s]+/)).map((s) => s.trim()).filter(Boolean);
+  if (!domains.length && !explicitEmails.length) throw new Error('Provide at least one sending domain (or account email).');
+
+  const client = instantlyClient(opts.apiKey);
+  const out = {
+    label, id: null, domains, byDomain: {}, missingDomains: [],
+    resolvedAccounts: [], applied: !!opts.apply, verified: null,
+  };
+
+  let emails = [...explicitEmails];
+  if (domains.length) {
+    log(`Resolving accounts for ${domains.length} domain(s): ${domains.join(', ')}…`);
+    const res = await resolveAccountsByDomains(client, domains);
+    out.byDomain = res.byDomain;
+    out.missingDomains = res.missingDomains;
+    for (const [d, list] of Object.entries(res.byDomain)) log(`  ${d}: ${list.length} account(s)`);
+    if (res.missingDomains.length) log(`  ⚠️ no accounts found for: ${res.missingDomains.join(', ')}`);
+    emails = [...new Set([...emails, ...res.emails])];
+  }
+  out.resolvedAccounts = emails;
+
+  if (!emails.length) { log('No accounts matched — nothing to tag.'); return out; }
+
+  if (!opts.apply) {
+    log(`Dry run: ${emails.length} account(s) would get tag "${label}". Not applied.`);
+    return out;
+  }
+
+  const tag = await ensureTag(client, label);
+  out.id = tag.id;
+  log(`Tag "${label}" ${tag._created ? 'created' : 'already existed'} (${tag.id}).`);
+  await assignTagToAccounts(client, tag.id, emails);
+  log(`Applied tag to ${emails.length} account(s); verifying…`);
+  const check = await verifyTagOnAccounts(client, tag.id, emails);
+  out.verified = check;
+  if (check.ok) log(`✅ Verified tag on all ${check.verifiedCount} account(s).`);
+  else log(`❌ Verification FAILED: ${check.missing.length} account(s) missing the tag.`);
+  return out;
+}
+
 // ── Signature swap ───────────────────────────────────────────────────────────
 function detectSignature(body) {
   const anchor = '{{sendingAccountName}}</div>';
@@ -512,4 +569,5 @@ module.exports = {
   runOnboard, APOLLO_TITLES, INSTANTLY_TZ_BY_STATE,
   instantlyClient, ensureTag, assignTagToAccounts, verifyTagOnAccounts,
   resolveAccountsByDomains, listAllAccounts, normalizeDomain, domainOf,
+  tagAccountsByDomain,
 };
